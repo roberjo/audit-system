@@ -1,0 +1,81 @@
+# Terraform Plan Check Configuration
+# This file configures the behavior of the check-terraform-plan.sh script
+
+# Output format for the check results
+# Options: text, json, yaml
+output_format: text
+
+# Whether to fail the pipeline on high-risk changes
+# If true, the script will exit with code 2 when high-risk changes are detected
+fail_on_high_risk: false
+
+# Enable verbose output for debugging
+verbose: false
+
+# Custom resource classifications
+# Define which resources should be considered critical or high-risk
+resource_classifications:
+  critical:
+    - aws_dynamodb_table
+    - aws_rds_cluster
+    - aws_s3_bucket
+    - aws_kms_key
+    - aws_vpc
+    - aws_route53_zone
+    - aws_elasticache_cluster
+    - aws_redshift_cluster
+    - aws_elasticsearch_domain
+    - aws_cloudfront_distribution
+  high_risk:
+    - aws_security_group
+    - aws_iam_role
+    - aws_iam_policy
+    - aws_db_instance
+    - aws_subnet
+    - aws_route_table
+    - aws_nat_gateway
+    - aws_elastic_load_balancer
+    - aws_autoscaling_group
+    - aws_cloudwatch_log_group
+
+# Specific checks to enable/disable
+checks:
+  resource_deletions: true
+  security_groups: true
+  iam_changes: true
+  database_changes: true
+  vpc_changes: true
+  kms_changes: true
+  subnet_changes: true
+  route_table_changes: true
+  load_balancer_changes: true
+  autoscaling_changes: true
+
+# Custom thresholds for change counts
+thresholds:
+  critical_changes: 0  # Fail if this many or more critical changes are detected
+  high_risk_changes: 3  # Warn if this many or more high-risk changes are detected
+
+# Notification settings
+notifications:
+  slack:
+    enabled: false
+    webhook_url: ""  # Set this in CI/CD environment variables
+    channel: "#terraform-alerts"
+  email:
+    enabled: false
+    recipients: []  # Add email addresses here
+
+# Custom messages for different scenarios
+messages:
+  critical_changes: "CRITICAL: High-risk infrastructure changes detected. Manual review required."
+  high_risk_changes: "WARNING: Potentially risky infrastructure changes detected. Please review carefully."
+  safe_changes: "SUCCESS: No high-risk changes detected in the Terraform plan."
+
+# Logging configuration
+logging:
+  enabled: true
+  level: info  # Options: debug, info, warn, error
+  file: "terraform-plan-check.log"
+  max_size: 10MB
+  max_files: 5 
