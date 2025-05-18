@@ -1710,3 +1710,410 @@ terraform {
    - Health checks
    - Performance monitoring
    - Cost tracking
+
+## Enhanced Blue/Green Deployment Strategies
+
+### 1. Improved Terraform Blue/Green Configuration
+
+#### Enhanced API Gateway Configuration
+```hcl
+# modules/blue-green/main.tf
+
+# API Gateway Stage Management
+resource "aws_api_gateway_stage" "blue" {
+  rest_api_id   = aws_api_gateway_rest_api.blue.id
+  stage_name    = "v1"
+  deployment_id = aws_api_gateway_deployment.blue.id
+  
+  variables = {
+    environment = "blue"
+    version     = var.api_version
+  }
+  
+  # Enable X-Ray tracing
+  xray_tracing_enabled = true
+  
+  # Enable detailed CloudWatch metrics
+  metrics_enabled = true
+  
+  # Enable access logging
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_logs.arn
+    format = jsonencode({
+      requestId      = "$context.requestId"
+      ip            = "$context.identity.sourceIp"
+      caller        = "$context.identity.caller"
+      user          = "$context.identity.user"
+      requestTime   = "$context.requestTime"
+      httpMethod    = "$context.httpMethod"
+      resourcePath  = "$context.resourcePath"
+      status        = "$context.status"
+      protocol      = "$context.protocol"
+      responseLength = "$context.responseLength"
+      integrationError = "$context.integrationErrorMessage"
+    })
+  }
+}
+
+# API Gateway Canary Deployment
+resource "aws_api_gateway_deployment" "blue_canary" {
+  rest_api_id = aws_api_gateway_rest_api.blue.id
+  stage_name  = "canary"
+  
+  variables = {
+    environment = "blue-canary"
+    version     = var.api_version
+  }
+  
+  triggers = {
+    redeployment = sha1(jsonencode([
+      aws_api_gateway_integration.api_integration,
+      aws_api_gateway_method.api_method
+    ]))
+  }
+}
+
+# Enhanced Route53 Configuration
+resource "aws_route53_record" "api" {
+  # ... existing configuration ...
+  
+  # Add health check
+  health_check_id = aws_route53_health_check.api.id
+  
+  # Add failover configuration
+  failover_routing_policy {
+    type = "PRIMARY"
+  }
+  
+  set_identifier = "blue"
+}
+
+resource "aws_route53_health_check" "api" {
+  fqdn              = "api.${var.domain_name}"
+  port              = 443
+  type              = "HTTPS"
+  resource_path     = "/health"
+  failure_threshold = 3
+  request_interval  = 30
+  
+  regions = ["us-east-1", "us-west-2", "eu-west-1"]
+  
+  tags = {
+    Environment = var.environment
+    Service     = "api"
+  }
+}
+```
+
+#### Enhanced Frontend Deployment
+```hcl
+# modules/frontend/main.tf
+
+# S3 Bucket Versioning and Lifecycle
+resource "aws_s3_bucket" "blue" {
+  # ... existing configuration ...
+  
+  versioning {
+    enabled = true
+  }
+  
+  lifecycle_rule {
+    enabled = true
+    
+    noncurrent_version_expiration {
+      days = 30
+    }
+    
+    abort_incomplete_multipart_upload_days = 7
+  }
+}
+
+# CloudFront Distribution with Enhanced Features
+resource "aws_cloudfront_distribution" "blue" {
+  # ... existing configuration ...
+  
+  # Enable real-time logging
+  logging_config {
+    bucket          = aws_s3_bucket.logs.bucket_domain_name
+    include_cookies = true
+    prefix          = "cloudfront-logs/${var.environment}/blue/"
+  }
+  
+  # Enable WAF
+  web_acl_id = aws_waf_web_acl.api.id
+  
+  # Custom error responses
+  custom_error_response {
+    error_code         = 404
+    response_code      = 200
+    response_page_path = "/index.html"
+  }
+  
+  # Origin failover
+  origin_group {
+    origin_id = "S3-Origin-Group"
+    
+    failover_criteria {
+      status_codes = [403, 404, 500, 502, 503, 504]
+    }
+    
+    member {
+      origin_id = "S3-Origin-1"
+    }
+    
+    member {
+      origin_id = "S3-Origin-2"
+    }
+  }
+}
+```
+
+### 2. Enhanced Harness Pipeline Configuration
+
+#### Improved Deployment Stage
+```yaml
+stages:
+  - name: deploy
+    type: CD
+    steps:
+      - name: pre-deployment-checks
+        type: Run
+        spec:
+          shell: bash
+          command: |
+            # Check resource quotas
+            ./scripts/check-resource-quotas.sh
+            
+            # Verify database connectivity
+            ./scripts/verify-database.sh
+            
+            # Check network connectivity
+            ./scripts/verify-network.sh
+            
+            # Validate security groups
+            ./scripts/validate-security-groups.sh
+
+      - name: deploy-blue-green
+        type: Run
+        spec:
+          shell: bash
+          command: |
+            # Enhanced deployment script with monitoring
+            function deploy_with_monitoring() {
+              local environment=$1
+              local active=$2
+              
+              # Start deployment monitoring
+              ./scripts/monitor-deployment.sh start
+              
+              # Deploy with canary analysis
+              if [ "$ENVIRONMENT" = "prod" ]; then
+                ./scripts/canary-deploy.sh $environment $active
+              else
+                ./scripts/standard-deploy.sh $environment $active
+              fi
+              
+              # Monitor deployment metrics
+              ./scripts/monitor-metrics.sh
+              
+              # Run automated tests
+              ./scripts/run-integration-tests.sh
+            }
+            
+            # Gradual traffic shifting with monitoring
+            function shift_traffic() {
+              local environment=$1
+              local new_active=$2
+              
+              # Start traffic shifting monitoring
+              ./scripts/monitor-traffic.sh start
+              
+              # Shift traffic gradually with health checks
+              for weight in 0 10 25 50 75 90 100; do
+                # Update Route53 weights
+                ./scripts/update-route53.sh $weight
+                
+                # Wait for DNS propagation
+                ./scripts/wait-for-dns.sh
+                
+                # Run health checks
+                ./scripts/health-check.sh
+                
+                # Monitor error rates
+                ./scripts/monitor-error-rates.sh
+                
+                # If error rate exceeds threshold, rollback
+                if [ $(./scripts/check-error-rate.sh) -gt $ERROR_RATE_THRESHOLD ]; then
+                  ./scripts/rollback.sh
+                  exit 1
+                fi
+                
+                sleep 30
+              done
+            }
+            
+            # Main deployment process
+            ENVIRONMENT=$1
+            CURRENT_ACTIVE=$(terraform output -raw active_environment)
+            NEW_ACTIVE=$([ "$CURRENT_ACTIVE" = "blue" ] && echo "green" || echo "blue")
+            
+            # Deploy with monitoring
+            deploy_with_monitoring $ENVIRONMENT $NEW_ACTIVE
+            
+            # Shift traffic with monitoring
+            shift_traffic $ENVIRONMENT $NEW_ACTIVE
+
+      - name: post-deployment-verification
+        type: Run
+        spec:
+          shell: bash
+          command: |
+            # Verify deployment success
+            ./scripts/verify-deployment.sh
+            
+            # Run smoke tests
+            ./scripts/run-smoke-tests.sh
+            
+            # Check performance metrics
+            ./scripts/check-performance.sh
+            
+            # Verify security compliance
+            ./scripts/verify-security.sh
+
+      - name: cleanup
+        type: Run
+        spec:
+          shell: bash
+          command: |
+            # Cleanup old resources if deployment successful
+            if [ "$DEPLOYMENT_STATUS" = "success" ]; then
+              ./scripts/cleanup-old-resources.sh
+            fi
+```
+
+### 3. Enhanced Monitoring and Observability
+
+#### Deployment Metrics
+```yaml
+metrics:
+  - name: deployment_success_rate
+    type: gauge
+    labels:
+      - environment
+      - version
+      - deployment_type
+    thresholds:
+      warning: 0.95
+      critical: 0.90
+  
+  - name: deployment_duration
+    type: histogram
+    labels:
+      - environment
+      - deployment_type
+    thresholds:
+      warning: 300
+      critical: 600
+  
+  - name: error_rate
+    type: gauge
+    labels:
+      - environment
+      - service
+    thresholds:
+      warning: 0.01
+      critical: 0.05
+  
+  - name: response_time
+    type: histogram
+    labels:
+      - environment
+      - service
+    thresholds:
+      warning: 200
+      critical: 500
+```
+
+#### Enhanced Alerting
+```yaml
+alerts:
+  - name: deployment_failure
+    condition: deployment_success_rate < 0.95
+    severity: critical
+    actions:
+      - type: slack
+        channel: "#pipeline-alerts"
+      - type: pagerduty
+        service: "deployment-team"
+      - type: email
+        recipients: ["devops@example.com"]
+  
+  - name: high_error_rate
+    condition: error_rate > 0.05
+    severity: high
+    actions:
+      - type: slack
+        channel: "#error-alerts"
+      - type: pagerduty
+        service: "oncall-team"
+  
+  - name: performance_degradation
+    condition: response_time > 500
+    severity: high
+    actions:
+      - type: slack
+        channel: "#performance-alerts"
+      - type: pagerduty
+        service: "performance-team"
+```
+
+### 4. Best Practices for Enhanced Blue/Green Deployments
+
+1. **Pre-deployment Checks**:
+   - Resource quota verification
+   - Network connectivity tests
+   - Security group validation
+   - Database connectivity checks
+   - Dependency verification
+
+2. **Deployment Strategy**:
+   - Canary deployments for production
+   - Gradual traffic shifting
+   - Automated rollback on failure
+   - Health check integration
+   - Performance monitoring
+
+3. **Monitoring and Observability**:
+   - Real-time deployment metrics
+   - Error rate monitoring
+   - Performance tracking
+   - Resource utilization
+   - Cost monitoring
+
+4. **Security and Compliance**:
+   - WAF integration
+   - Security group validation
+   - Compliance checks
+   - Access logging
+   - Audit trail
+
+5. **Resource Management**:
+   - Automated cleanup
+   - Resource tagging
+   - Cost optimization
+   - Capacity planning
+   - Quota management
+
+6. **Testing and Validation**:
+   - Integration tests
+   - Smoke tests
+   - Performance tests
+   - Security scans
+   - Compliance validation
+
+7. **Documentation and Reporting**:
+   - Deployment logs
+   - Change history
+   - Performance reports
+   - Cost reports
+   - Incident reports
