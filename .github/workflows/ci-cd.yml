@@ -1,0 +1,92 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: audit-system
+
+jobs:
+  validate:
+    name: Validate Prerequisites
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: |
+          chmod +x project/scripts/pipeline/validate-pipeline.sh
+          chmod +x project/scripts/pipeline/docker-build-push.sh
+          chmod +x project/scripts/pipeline/k8s-deploy.sh
+          chmod +x project/scripts/pipeline/post-deploy-verify.sh
+      
+      - name: Run validation
+        run: ./project/scripts/pipeline/validate-pipeline.sh
+
+  build:
+    name: Build and Push Docker Image
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Run build and push
+        run: ./project/scripts/pipeline/docker-build-push.sh
+
+  deploy:
+    name: Deploy to Kubernetes
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Configure kubectl
+        run: aws eks update-kubeconfig --name ${{ env.APP_NAME }}-cluster --region ${{ env.AWS_REGION }}
+      
+      - name: Run deployment
+        run: ./project/scripts/pipeline/k8s-deploy.sh
+
+  verify:
+    name: Verify Deployment
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Configure kubectl
+        run: aws eks update-kubeconfig --name ${{ env.APP_NAME }}-cluster --region ${{ env.AWS_REGION }}
+      
+      - name: Run verification
+        run: ./project/scripts/pipeline/post-deploy-verify.sh 

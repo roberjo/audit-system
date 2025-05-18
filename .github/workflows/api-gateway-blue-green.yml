@@ -1,0 +1,94 @@
+name: API Gateway Blue/Green Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: audit-system
+
+jobs:
+  setup:
+    name: Setup API Gateway
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/api-gateway-setup.sh
+      
+      - name: Run API Gateway setup
+        run: ./project/scripts/pipeline/api-gateway-setup.sh
+
+  deploy:
+    name: Deploy to API Gateway
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/api-gateway-deploy.sh
+      
+      - name: Run API Gateway deployment
+        run: ./project/scripts/pipeline/api-gateway-deploy.sh
+
+  approve:
+    name: Wait for Approval
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for manual approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.token }}
+          approvers: ${{ secrets.APPROVERS }}
+          minimum-approvals: 1
+          issue-title: 'Approve API Gateway Blue/Green Deployment'
+          issue-body: 'Please review and approve the API Gateway deployment.'
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: 'LGTM,Approved'
+          additional-denied-words: 'Rejected,Denied'
+
+  swap:
+    name: Swap Stages
+    needs: approve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/api-gateway-deploy.sh
+      
+      - name: Swap stages
+        run: ./project/scripts/pipeline/api-gateway-deploy.sh --swap 

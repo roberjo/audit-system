@@ -1,0 +1,67 @@
+name: Monitoring
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Run every 5 minutes
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: audit-system
+
+jobs:
+  monitor:
+    name: Monitor Infrastructure
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: |
+          chmod +x project/scripts/pipeline/cloudfront-monitor.sh
+          chmod +x project/scripts/pipeline/cloudfront-metrics.sh
+      
+      - name: Run monitoring
+        run: ./project/scripts/pipeline/cloudfront-monitor.sh
+      
+      - name: Run metrics collection
+        run: ./project/scripts/pipeline/cloudfront-metrics.sh
+      
+      - name: Check for alerts
+        id: check_alerts
+        run: |
+          if grep -q "WARNING\|ERROR" "../artifacts/cloudfront-monitor.log"; then
+            echo "alerts=true" >> $GITHUB_OUTPUT
+          else
+            echo "alerts=false" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Create issue for alerts
+        if: steps.check_alerts.outputs.alerts == 'true'
+        uses: actions/github-script@v6
+        with:
+          script: |
+            const fs = require('fs');
+            const logContent = fs.readFileSync('../artifacts/cloudfront-monitor.log', 'utf8');
+            const alerts = logContent.split('\n').filter(line => line.includes('WARNING') || line.includes('ERROR'));
+            
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Infrastructure Monitoring Alerts',
+              body: `## Monitoring Alerts\n\n${alerts.join('\n')}\n\nPlease review the alerts and take necessary action.`
+            });
+      
+      - name: Upload metrics
+        uses: actions/upload-artifact@v3
+        with:
+          name: metrics
+          path: ../artifacts/metrics/
+          retention-days: 30 

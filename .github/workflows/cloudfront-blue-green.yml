@@ -1,0 +1,125 @@
+name: CloudFront Blue/Green Deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+
+env:
+  AWS_REGION: us-east-1
+  APP_NAME: audit-system
+
+jobs:
+  setup:
+    name: Setup CloudFront
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/cloudfront-setup.sh
+      
+      - name: Run CloudFront setup
+        run: ./project/scripts/pipeline/cloudfront-setup.sh
+
+  build:
+    name: Build React App
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Build React app
+        run: npm run build
+      
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: build
+          path: build/
+
+  deploy:
+    name: Deploy to CloudFront
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Download build artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: build
+          path: build
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/cloudfront-deploy.sh
+      
+      - name: Run CloudFront deployment
+        run: ./project/scripts/pipeline/cloudfront-deploy.sh
+
+  approve:
+    name: Wait for Approval
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Wait for manual approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.token }}
+          approvers: ${{ secrets.APPROVERS }}
+          minimum-approvals: 1
+          issue-title: 'Approve CloudFront Blue/Green Deployment'
+          issue-body: 'Please review and approve the CloudFront deployment.'
+          exclude-workflow-initiator-as-approver: false
+          additional-approved-words: 'LGTM,Approved'
+          additional-denied-words: 'Rejected,Denied'
+
+  swap:
+    name: Swap Distributions
+    needs: approve
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      - name: Make scripts executable
+        run: chmod +x project/scripts/pipeline/cloudfront-deploy.sh
+      
+      - name: Swap distributions
+        run: ./project/scripts/pipeline/cloudfront-deploy.sh --swap 
