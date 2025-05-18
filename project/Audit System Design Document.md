@@ -133,45 +133,45 @@ graph LR
 * **2.1 High-Level Architecture:** (Refer to the updated Mermaid diagram above) The system follows an event-driven architecture leveraging AWS serverless services for scalability, cost-efficiency, and maintainability.  
 * **2.2 Component Details:**  
   * **Wealth Management Applications (Producers):**  
-    * **Technology:** Java-based applications.  
-    * **Responsibility:** Generate audit events in a defined JSON format, integrate with Micro Focus Voltage for data obfuscation, and publish events to the designated SNS topic using the AWS SDK for Java.  
-    * **Integration:** Configuration will be required in each application to specify the SNS topic ARN and Voltage endpoint.  
+    * **Technology:** ASP.NET Core 8 applications.
+    * **Responsibility:** Generate audit events in a defined JSON format, integrate with Micro Focus Voltage for data obfuscation, and publish events to the designated SNS topic using the AWS SDK for .NET.
+    * **Integration:** Configuration will be required in each application to specify the SNS topic ARN and Voltage endpoint.
   * **SNS Topic (Audit Events):**  
-    * **Service:** AWS Simple Notification Service (SNS).  
-    * **Purpose:** Centralized point for receiving audit events from all wealth management applications. Decouples producers from consumers.  
-    * **Configuration:** Standard SNS topic configuration. Access policies will be defined to allow publishing from the wealth management applications.  
+    * **Service:** AWS Simple Notification Service (SNS).
+    * **Purpose:** Centralized point for receiving audit events from all wealth management applications. Decouples producers from consumers.
+    * **Configuration:** Standard SNS topic configuration. Access policies will be defined to allow publishing from the wealth management applications.
   * **SQS Queue (Audit Event Ingestion):**  
-    * **Service:** AWS Simple Queue Service (SQS) \- Standard Queue.  
-    * **Purpose:** Buffering mechanism for incoming audit events, ensuring reliable delivery to the processing Lambda.  
-    * **Configuration:** Standard SQS queue configuration with appropriate message visibility timeout and retention period. A Dead-Letter Queue (DLQ) will be configured for messages that fail processing.  
-  * **Lambda Function (Audit Data Processing \- Java):**  
-    * **Service:** AWS Lambda.  
-    * **Language:** Java.  
+    * **Service:** AWS Simple Queue Service (SQS) - Standard Queue.
+    * **Purpose:** Buffering mechanism for incoming audit events, ensuring reliable delivery to the processing Lambda.
+    * **Configuration:** Standard SQS queue configuration with appropriate message visibility timeout and retention period. A Dead-Letter Queue (DLQ) will be configured for messages that fail processing.
+  * **Lambda Function (Audit Data Processing - ASP.NET Core 8):**  
+    * **Service:** AWS Lambda.
+    * **Language:** ASP.NET Core 8.
     * **Functionality:**  
-      * Consume messages from the SQS queue in batches.  
-      * Validate the structure and basic content of each audit event.  
-      * Perform any necessary basic transformations (e.g., adding ingestion timestamp).  
-      * Persist the processed audit event to the DynamoDB table using the AWS SDK for Java.  
-      * Handle potential errors and send failed messages to a dedicated DLQ (if needed within the Lambda).  
-    * **Configuration:** Appropriate memory allocation, timeout settings, IAM role with permissions to read from the SQS queue and write to the DynamoDB table.  
+      * Consume messages from the SQS queue in batches.
+      * Validate the structure and basic content of each audit event.
+      * Perform any necessary basic transformations (e.g., adding ingestion timestamp).
+      * Persist the processed audit event to the DynamoDB table using the AWS SDK for .NET.
+      * Handle potential errors and send failed messages to a dedicated DLQ (if needed within the Lambda).
+    * **Configuration:** Appropriate memory allocation, timeout settings, IAM role with permissions to read from the SQS queue and write to the DynamoDB table.
   * **DynamoDB Table (Audit Data Store):**  
-    * **Service:** Amazon DynamoDB.  
-    * **Mode:** On-Demand Capacity.  
-    * **Purpose:** Primary operational store for audit logs, providing scalable and low-latency writes.  
-    * **Schema:** Detailed schema definition based on the agreed-upon audit event structure. Partition key and sort key will be defined based on anticipated query patterns (though direct querying is not the primary use case).  
-    * **Encryption:** Configured with AWS KMS encryption at rest using an AWS-managed or customer-managed key.  
-    * **Streams:** DynamoDB Streams will be enabled to trigger the Snowflake ingestion Lambda on new or modified items.  
-  * **Lambda Function (Snowflake Ingestion \- Python/Java):**  
-    * **Service:** AWS Lambda.  
-    * **Language:** Python or Java (to be determined based on team expertise and library availability for Snowflake interaction).  
+    * **Service:** Amazon DynamoDB.
+    * **Mode:** On-Demand Capacity.
+    * **Purpose:** Primary operational store for audit logs, providing scalable and low-latency writes.
+    * **Schema:** Detailed schema definition based on the agreed-upon audit event structure. Partition key and sort key will be defined based on anticipated query patterns (though direct querying is not the primary use case).
+    * **Encryption:** Configured with AWS KMS encryption at rest using an AWS-managed or customer-managed key.
+    * **Streams:** DynamoDB Streams will be enabled to trigger the Snowflake ingestion Lambda on new or modified items.
+  * **Lambda Function (Snowflake Ingestion - Python):**  
+    * **Service:** AWS Lambda.
+    * **Language:** Python 3.11+.
     * **Functionality:**  
-      * Consume batches of records from the DynamoDB Stream.  
-      * Transform the DynamoDB records into a format suitable for Snowflake (e.g., CSV or JSON).  
-      * Compress the data (e.g., using gzip).  
-      * Stage the compressed data files in the designated S3 bucket.  
-      * Trigger Snowpipe to load the data into the Snowflake data mart using the Snowflake Python connector or JDBC driver.  
-      * Handle potential errors and implement retry mechanisms.  
-    * **Configuration:** Appropriate memory allocation, timeout settings, IAM role with permissions to read from the DynamoDB Stream, write to the S3 bucket, and interact with Snowflake (potentially through Secrets Manager for credentials).  
+      * Consume batches of records from the DynamoDB Stream.
+      * Transform the DynamoDB records into a format suitable for Snowflake (e.g., CSV or JSON).
+      * Compress the data (e.g., using gzip).
+      * Stage the compressed data files in the designated S3 bucket.
+      * Trigger Snowpipe to load the data into the Snowflake data mart using the Snowflake Python connector.
+      * Handle potential errors and implement retry mechanisms.
+    * **Configuration:** Appropriate memory allocation, timeout settings, IAM role with permissions to read from the DynamoDB Stream, write to the S3 bucket, and interact with Snowflake (potentially through Secrets Manager for credentials).
   * **S3 Bucket (Staging for Snowpipe):**  
     * **Service:** Amazon Simple Storage Service (S3).  
     * **Purpose:** Temporary storage for data files before Snowpipe ingestion.  
@@ -186,17 +186,17 @@ graph LR
 
 **3\. Data Flow**
 
-1. A wealth management application generates an audit event.  
-2. Sensitive data within the event payload is obfuscated using Micro Focus Voltage.  
-3. The obfuscated audit event is published to the designated SNS topic over HTTPS.  
-4. The SNS topic pushes the event to the subscribing SQS queue.  
-5. The Java-based processing Lambda function polls the SQS queue for batches of messages.  
-6. The Lambda processes each message, validates its structure, performs basic transformations, and writes it to the DynamoDB table.  
-7. New records written to the DynamoDB table trigger the DynamoDB Stream.  
-8. The Snowflake ingestion Lambda function reads batches of records from the DynamoDB Stream.  
-9. The Lambda transforms the data into a suitable format (e.g., JSON), compresses it, and uploads it to the designated S3 staging bucket.  
-10. The arrival of new files in the S3 bucket triggers the Snowpipe in Snowflake.  
-11. Snowpipe loads the data from the S3 files into the target tables in the Snowflake data mart.  
+1. A wealth management application (ASP.NET Core 8) generates an audit event.
+2. Sensitive data within the event payload is obfuscated using Micro Focus Voltage.
+3. The obfuscated audit event is published to the designated SNS topic over HTTPS using the AWS SDK for .NET.
+4. The SNS topic pushes the event to the subscribing SQS queue.
+5. The ASP.NET Core 8 processing Lambda function polls the SQS queue for batches of messages.
+6. The Lambda processes each message, validates its structure, performs basic transformations, and writes it to the DynamoDB table using the AWS SDK for .NET.
+7. New records written to the DynamoDB table trigger the DynamoDB Stream.
+8. The Python-based Snowflake ingestion Lambda function reads batches of records from the DynamoDB Stream.
+9. The Lambda transforms the data into a suitable format (e.g., JSON), compresses it, and uploads it to the designated S3 staging bucket.
+10. The arrival of new files in the S3 bucket triggers the Snowpipe in Snowflake.
+11. Snowpipe loads the data from the S3 files into the target tables in the Snowflake data mart.
 12. The Wealth Management team can then query and analyze the audit data in Snowflake for various purposes.
 
 **4\. Security Design**
