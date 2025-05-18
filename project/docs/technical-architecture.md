@@ -1,4 +1,8 @@
-# Technical Architecture Document
+# Technical Architecture
+
+## Overview
+
+This document outlines the technical architecture of the Audit System, a comprehensive solution designed to track and manage audit events across multiple applications. The system is built on AWS Cloud infrastructure and uses a modern tech stack including .NET Core 8, TypeScript, Python, and React. This document serves as a single source of truth for understanding how the system's components work together, from event collection to storage and reporting.
 
 ## System Overview
 

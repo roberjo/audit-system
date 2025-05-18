@@ -2,6 +2,8 @@
 
 ## Overview
 
+This document describes how audit data is stored and organized in the Audit System. It covers both the DynamoDB tables used for high-performance event storage and the Aurora PostgreSQL database used for detailed audit records and reporting. The document includes table schemas, relationships, data types, and retention policies, making it essential for developers working with the system's data layer.
+
 The Audit System uses a combination of Amazon DynamoDB and Amazon Aurora PostgreSQL v2 for data storage. This document outlines the data models for both databases.
 
 ## DynamoDB Tables

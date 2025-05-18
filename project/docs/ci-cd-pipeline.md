@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Audit System uses a comprehensive CI/CD pipeline that combines GitHub Actions for build and test automation, JFrog Artifactory for artifact management, and Harness for deployment orchestration and security scanning.
+This document explains how code changes are automatically built, tested, and deployed in the Audit System. It details the integration of GitHub Actions for continuous integration, JFrog Artifactory for artifact management, and Harness for deployment orchestration. The pipeline ensures code quality through automated testing, security scanning, and controlled deployments across development, staging, and production environments.
 
 ## Environment Configuration
 

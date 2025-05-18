@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the security measures and best practices implemented in the Audit System. The system follows a defense-in-depth approach, implementing security controls at multiple layers.
+This guide details the security measures implemented in the Audit System to protect sensitive audit data and ensure compliance with security standards. It covers authentication, authorization, data encryption, network security, and monitoring practices. Whether you're a developer implementing new features or an operations team maintaining the system, this guide provides the necessary information to maintain the system's security posture.
 
 ## Authentication & Authorization
 
