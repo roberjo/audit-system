@@ -1334,3 +1334,379 @@ auto_healing:
    - Recovery procedures
    - Configuration management
    - Troubleshooting guides
+
+## Terraform Cloud Structure and Blue/Green Deployment
+
+### 1. Terraform Cloud Workspace Structure
+
+```
+terraform/
+├── environments/
+│   ├── dev/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── terraform.tfvars
+│   ├── staging/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── terraform.tfvars
+│   └── prod/
+│       ├── main.tf
+│       ├── variables.tf
+│       └── terraform.tfvars
+├── modules/
+│   ├── networking/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── compute/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── storage/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   ├── frontend/
+│   │   ├── main.tf
+│   │   ├── variables.tf
+│   │   └── outputs.tf
+│   └── blue-green/
+│       ├── main.tf
+│       ├── variables.tf
+│       └── outputs.tf
+└── shared/
+    ├── backend.tf
+    ├── providers.tf
+    └── versions.tf
+```
+
+### 2. Blue/Green Deployment Configuration
+
+#### API Blue/Green Deployment
+```hcl
+# modules/blue-green/main.tf
+
+# API Gateway Blue/Green Configuration
+resource "aws_api_gateway_rest_api" "blue" {
+  name = "${var.environment}-api-blue"
+  # ... configuration ...
+}
+
+resource "aws_api_gateway_rest_api" "green" {
+  name = "${var.environment}-api-green"
+  # ... configuration ...
+}
+
+# Route53 Weighted Routing
+resource "aws_route53_record" "api" {
+  zone_id = var.route53_zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  weighted_routing_policy {
+    weight = var.active_environment == "blue" ? 100 : 0
+  }
+
+  set_identifier = "blue"
+  alias {
+    name                   = aws_api_gateway_rest_api.blue.arn
+    zone_id               = aws_api_gateway_rest_api.blue.zone_id
+    evaluate_target_health = true
+  }
+}
+
+resource "aws_route53_record" "api_green" {
+  zone_id = var.route53_zone_id
+  name    = "api.${var.domain_name}"
+  type    = "A"
+
+  weighted_routing_policy {
+    weight = var.active_environment == "green" ? 100 : 0
+  }
+
+  set_identifier = "green"
+  alias {
+    name                   = aws_api_gateway_rest_api.green.arn
+    zone_id               = aws_api_gateway_rest_api.green.zone_id
+    evaluate_target_health = true
+  }
+}
+```
+
+#### Frontend Blue/Green Deployment
+```hcl
+# modules/frontend/main.tf
+
+# S3 Buckets for Blue/Green
+resource "aws_s3_bucket" "blue" {
+  bucket = "${var.environment}-frontend-blue"
+  # ... configuration ...
+}
+
+resource "aws_s3_bucket" "green" {
+  bucket = "${var.environment}-frontend-green"
+  # ... configuration ...
+}
+
+# CloudFront Distributions
+resource "aws_cloudfront_distribution" "blue" {
+  origin {
+    domain_name = aws_s3_bucket.blue.bucket_regional_domain_name
+    # ... configuration ...
+  }
+  # ... configuration ...
+}
+
+resource "aws_cloudfront_distribution" "green" {
+  origin {
+    domain_name = aws_s3_bucket.green.bucket_regional_domain_name
+    # ... configuration ...
+  }
+  # ... configuration ...
+}
+
+# Route53 Records
+resource "aws_route53_record" "frontend" {
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  weighted_routing_policy {
+    weight = var.active_environment == "blue" ? 100 : 0
+  }
+
+  set_identifier = "blue"
+  alias {
+    name                   = aws_cloudfront_distribution.blue.domain_name
+    zone_id               = aws_cloudfront_distribution.blue.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "frontend_green" {
+  zone_id = var.route53_zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  weighted_routing_policy {
+    weight = var.active_environment == "green" ? 100 : 0
+  }
+
+  set_identifier = "green"
+  alias {
+    name                   = aws_cloudfront_distribution.green.domain_name
+    zone_id               = aws_cloudfront_distribution.green.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+```
+
+### 3. Environment Configuration
+
+#### Environment Variables
+```hcl
+# environments/prod/variables.tf
+
+variable "environment" {
+  description = "Environment name"
+  type        = string
+  default     = "prod"
+}
+
+variable "active_environment" {
+  description = "Active environment for blue/green deployment"
+  type        = string
+  default     = "blue"
+}
+
+variable "domain_name" {
+  description = "Domain name for the application"
+  type        = string
+}
+
+variable "route53_zone_id" {
+  description = "Route53 hosted zone ID"
+  type        = string
+}
+
+# ... other variables ...
+```
+
+#### Environment-specific Configuration
+```hcl
+# environments/prod/terraform.tfvars
+
+environment        = "prod"
+active_environment = "blue"
+domain_name        = "audit-system.example.com"
+route53_zone_id    = "Z1234567890ABC"
+
+# ... other variables ...
+```
+
+### 4. Deployment Process
+
+#### Blue/Green Deployment Script
+```bash
+#!/bin/bash
+
+# blue-green-deploy.sh
+
+function deploy_environment() {
+    local environment=$1
+    local active=$2
+    
+    # Update active environment in tfvars
+    sed -i "s/active_environment = \".*\"/active_environment = \"$active\"/" environments/$environment/terraform.tfvars
+    
+    # Apply Terraform changes
+    terraform -chdir=environments/$environment apply -auto-approve
+    
+    # Wait for deployment to stabilize
+    sleep 30
+    
+    # Run health checks
+    ./scripts/health-check.sh $environment $active
+}
+
+function switch_traffic() {
+    local environment=$1
+    local new_active=$2
+    local old_active=$([ "$new_active" = "blue" ] && echo "green" || echo "blue")
+    
+    # Gradually shift traffic
+    for weight in 0 25 50 75 100; do
+        # Update Route53 weights
+        aws route53 change-resource-record-sets \
+            --hosted-zone-id $ROUTE53_ZONE_ID \
+            --change-batch "{
+                \"Changes\": [
+                    {
+                        \"Action\": \"UPSERT\",
+                        \"ResourceRecordSet\": {
+                            \"Name\": \"$DOMAIN_NAME\",
+                            \"Type\": \"A\",
+                            \"SetIdentifier\": \"$new_active\",
+                            \"Weight\": $weight,
+                            \"AliasTarget\": {
+                                \"HostedZoneId\": \"$CLOUDFRONT_ZONE_ID\",
+                                \"DNSName\": \"$CLOUDFRONT_DOMAIN\",
+                                \"EvaluateTargetHealth\": false
+                            }
+                        }
+                    },
+                    {
+                        \"Action\": \"UPSERT\",
+                        \"ResourceRecordSet\": {
+                            \"Name\": \"$DOMAIN_NAME\",
+                            \"Type\": \"A\",
+                            \"SetIdentifier\": \"$old_active\",
+                            \"Weight\": $((100 - weight)),
+                            \"AliasTarget\": {
+                                \"HostedZoneId\": \"$CLOUDFRONT_ZONE_ID\",
+                                \"DNSName\": \"$CLOUDFRONT_DOMAIN\",
+                                \"EvaluateTargetHealth\": false
+                            }
+                        }
+                    }
+                ]
+            }"
+        
+        # Wait for DNS propagation
+        sleep 30
+        
+        # Run health checks
+        ./scripts/health-check.sh $environment $new_active
+    done
+}
+
+# Main deployment process
+ENVIRONMENT=$1
+CURRENT_ACTIVE=$(terraform -chdir=environments/$ENVIRONMENT output -raw active_environment)
+NEW_ACTIVE=$([ "$CURRENT_ACTIVE" = "blue" ] && echo "green" || echo "blue")
+
+# Deploy to inactive environment
+deploy_environment $ENVIRONMENT $NEW_ACTIVE
+
+# Switch traffic
+switch_traffic $ENVIRONMENT $NEW_ACTIVE
+
+# Clean up old environment if needed
+if [ "$CLEANUP_OLD" = "true" ]; then
+    terraform -chdir=environments/$ENVIRONMENT destroy -target=module.$CURRENT_ACTIVE -auto-approve
+fi
+```
+
+### 5. State Management
+
+#### Backend Configuration
+```hcl
+# shared/backend.tf
+
+terraform {
+  backend "remote" {
+    organization = "audit-system"
+    
+    workspaces {
+      name = "audit-system-${var.environment}"
+    }
+  }
+}
+```
+
+#### State Locking
+```hcl
+# shared/versions.tf
+
+terraform {
+  required_version = ">= 1.0.0"
+  
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 4.0"
+    }
+  }
+  
+  backend "s3" {
+    bucket         = "audit-system-terraform-state"
+    key            = "terraform.tfstate"
+    region         = "us-east-1"
+    dynamodb_table = "audit-system-terraform-locks"
+    encrypt        = true
+  }
+}
+```
+
+### 6. Best Practices
+
+1. **State Management**:
+   - Use separate workspaces per environment
+   - Implement state locking
+   - Regular state backups
+   - State file encryption
+
+2. **Module Organization**:
+   - Reusable modules
+   - Clear module interfaces
+   - Version pinning
+   - Documentation
+
+3. **Blue/Green Deployment**:
+   - Gradual traffic shifting
+   - Health checks
+   - Rollback capability
+   - Cleanup procedures
+
+4. **Security**:
+   - IAM role separation
+   - Resource encryption
+   - Network isolation
+   - Access logging
+
+5. **Monitoring**:
+   - Deployment metrics
+   - Health checks
+   - Performance monitoring
+   - Cost tracking
