@@ -9,54 +9,63 @@ using Xunit.Abstractions;
 
 namespace AuditQuery.Tests.Load
 {
+    /// <summary>
+    /// Load tests for the audit query service.
+    /// Tests system performance under concurrent load and pagination scenarios.
+    /// </summary>
     public class AuditQueryLoadTests : IAsyncLifetime
     {
-        private readonly IAmazonDynamoDB _dynamoDbClient;
+        private readonly IAmazonDynamoDB _dynamoDb;
         private readonly string _tableName;
-        private readonly AuditQueryService _service;
-        private readonly ILogger<AuditQueryService> _logger;
-        private readonly ITestOutputHelper _output;
+        private readonly ILogger<AuditQueryLoadTests> _logger;
+        private readonly AuditQueryService _queryService;
 
+        /// <summary>
+        /// Initializes the load test environment with DynamoDB client and test table.
+        /// </summary>
         public AuditQueryLoadTests(ITestOutputHelper output)
         {
-            _dynamoDbClient = new AmazonDynamoDBClient();
-            _tableName = $"load-test-audit-table-{Guid.NewGuid()}";
-            _logger = LoggerFactory.Create(builder => builder.AddConsole())
-                .CreateLogger<AuditQueryService>();
-            _service = new AuditQueryService(_dynamoDbClient, _tableName, _logger);
-            _output = output;
+            _dynamoDb = new AmazonDynamoDBClient();
+            _tableName = $"audit-query-load-test-{Guid.NewGuid()}";
+            _logger = new LoggerFactory()
+                .AddXUnit(output)
+                .CreateLogger<AuditQueryLoadTests>();
+            _queryService = new AuditQueryService(_dynamoDb, _logger);
         }
 
+        /// <summary>
+        /// Sets up the test environment by creating a DynamoDB table and inserting test data.
+        /// </summary>
         public async Task InitializeAsync()
         {
-            // Create test table with higher capacity
+            // Create test table with appropriate schema
             var createTableRequest = new Amazon.DynamoDBv2.Model.CreateTableRequest
             {
                 TableName = _tableName,
-                AttributeDefinitions = new List<Amazon.DynamoDBv2.Model.AttributeDefinition>
-                {
-                    new Amazon.DynamoDBv2.Model.AttributeDefinition
-                    {
-                        AttributeName = "userId",
-                        AttributeType = Amazon.DynamoDBv2.ScalarAttributeType.S
-                    },
-                    new Amazon.DynamoDBv2.Model.AttributeDefinition
-                    {
-                        AttributeName = "timestamp",
-                        AttributeType = Amazon.DynamoDBv2.ScalarAttributeType.S
-                    }
-                },
                 KeySchema = new List<Amazon.DynamoDBv2.Model.KeySchemaElement>
                 {
                     new Amazon.DynamoDBv2.Model.KeySchemaElement
                     {
                         AttributeName = "userId",
-                        KeyType = Amazon.DynamoDBv2.KeyType.HASH
+                        KeyType = "HASH"
                     },
                     new Amazon.DynamoDBv2.Model.KeySchemaElement
                     {
                         AttributeName = "timestamp",
-                        KeyType = Amazon.DynamoDBv2.KeyType.RANGE
+                        KeyType = "RANGE"
+                    }
+                },
+                AttributeDefinitions = new List<Amazon.DynamoDBv2.Model.AttributeDefinition>
+                {
+                    new Amazon.DynamoDBv2.Model.AttributeDefinition
+                    {
+                        AttributeName = "userId",
+                        AttributeType = "S"
+                    },
+                    new Amazon.DynamoDBv2.Model.AttributeDefinition
+                    {
+                        AttributeName = "timestamp",
+                        AttributeType = "S"
                     }
                 },
                 ProvisionedThroughput = new Amazon.DynamoDBv2.Model.ProvisionedThroughput
@@ -66,121 +75,127 @@ namespace AuditQuery.Tests.Load
                 }
             };
 
-            await _dynamoDbClient.CreateTableAsync(createTableRequest);
+            await _dynamoDb.CreateTableAsync(createTableRequest);
 
-            // Wait for table to become active
-            var describeTableRequest = new Amazon.DynamoDBv2.Model.DescribeTableRequest { TableName = _tableName };
-            while (true)
-            {
-                var response = await _dynamoDbClient.DescribeTableAsync(describeTableRequest);
-                if (response.Table.TableStatus == Amazon.DynamoDBv2.TableStatus.ACTIVE)
-                    break;
-                await Task.Delay(1000);
-            }
-
-            // Insert test data
-            var table = Table.LoadTable(_dynamoDbClient, _tableName);
-            var tasks = new List<Task>();
+            // Insert test data in batches for better performance
+            var table = Table.LoadTable(_dynamoDb, _tableName);
+            var batchWrite = table.CreateBatchWrite();
+            var random = new Random();
 
             for (int i = 0; i < 1000; i++)
             {
-                var document = new Document
+                var doc = new Document
                 {
-                    ["userId"] = $"user-{i % 100}",
-                    ["timestamp"] = DateTime.UtcNow.AddHours(-i).ToString("o"),
-                    ["action"] = $"action-{i % 10}",
-                    ["systemId"] = $"system-{i % 5}"
+                    ["userId"] = $"user{random.Next(1, 11)}",
+                    ["timestamp"] = DateTime.UtcNow.AddMinutes(-random.Next(0, 60)).ToString("o"),
+                    ["action"] = $"action{random.Next(1, 6)}",
+                    ["systemId"] = $"system{random.Next(1, 4)}",
+                    ["details"] = $"Test details {i}"
                 };
+                batchWrite.AddDocumentToPut(doc);
 
-                tasks.Add(table.PutItemAsync(document));
-
-                if (tasks.Count >= 25)
+                if (i % 25 == 0)
                 {
-                    await Task.WhenAll(tasks);
-                    tasks.Clear();
+                    await batchWrite.ExecuteAsync();
+                    batchWrite = table.CreateBatchWrite();
                 }
             }
 
-            if (tasks.Any())
+            if (batchWrite.PendingPutItems.Count > 0)
             {
-                await Task.WhenAll(tasks);
+                await batchWrite.ExecuteAsync();
             }
         }
 
+        /// <summary>
+        /// Cleans up test resources by deleting the test table.
+        /// </summary>
         public async Task DisposeAsync()
         {
-            await _dynamoDbClient.DeleteTableAsync(_tableName);
+            await _dynamoDb.DeleteTableAsync(_tableName);
         }
 
+        /// <summary>
+        /// Tests system performance under concurrent query load.
+        /// Executes multiple queries simultaneously to verify system stability.
+        /// </summary>
         [Fact]
         public async Task LoadTest_ConcurrentQueries()
         {
             const int concurrentQueries = 50;
             const int iterations = 10;
-
-            var tasks = new List<Task>();
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var totalTime = 0L;
+            var random = new Random();
 
             for (int i = 0; i < iterations; i++)
             {
+                var startTime = DateTime.UtcNow;
+                var tasks = new List<Task>();
+
+                // Execute concurrent queries with different parameters
                 for (int j = 0; j < concurrentQueries; j++)
                 {
-                    tasks.Add(ExecuteQuery($"user-{j % 100}"));
+                    var userId = $"user{random.Next(1, 11)}";
+                    var systemId = $"system{random.Next(1, 4)}";
+                    tasks.Add(ExecuteQuery(userId, systemId));
                 }
 
                 await Task.WhenAll(tasks);
-                tasks.Clear();
+                totalTime += (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
             }
 
-            stopwatch.Stop();
-            var totalQueries = concurrentQueries * iterations;
-            var averageTime = stopwatch.ElapsedMilliseconds / totalQueries;
-
-            _output.WriteLine($"Executed {totalQueries} queries in {stopwatch.ElapsedMilliseconds}ms");
-            _output.WriteLine($"Average query time: {averageTime}ms");
+            var averageTime = totalTime / iterations;
+            _logger.LogInformation($"Average time for {concurrentQueries} concurrent queries: {averageTime}ms");
+            Assert.True(averageTime < 5000, $"Average query time {averageTime}ms exceeds 5 second threshold");
         }
 
+        /// <summary>
+        /// Tests pagination performance by retrieving large result sets in pages.
+        /// Verifies system behavior with large data volumes.
+        /// </summary>
         [Fact]
         public async Task LoadTest_Pagination()
         {
             const int pageSize = 100;
-            const int expectedPages = 10;
-
-            var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            var startTime = DateTime.UtcNow;
             var totalItems = 0;
-            Dictionary<string, Amazon.DynamoDBv2.Model.AttributeValue>? lastEvaluatedKey = null;
+            string? lastEvaluatedKey = null;
 
-            for (int i = 0; i < expectedPages; i++)
+            // Retrieve all records using pagination
+            do
             {
-                var result = await _service.QueryAuditRecordsAsync(
-                    userId: "user-0",
+                var result = await _queryService.QueryAuditRecordsAsync(
+                    userId: "user1",
                     pageSize: pageSize,
                     lastEvaluatedKey: lastEvaluatedKey);
 
                 totalItems += result.Items.Count;
                 lastEvaluatedKey = result.LastEvaluatedKey;
+            } while (lastEvaluatedKey != null);
 
-                if (lastEvaluatedKey == null)
-                    break;
-            }
+            var totalTime = (long)(DateTime.UtcNow - startTime).TotalMilliseconds;
+            var averageTimePerPage = totalTime / (totalItems / pageSize);
 
-            stopwatch.Stop();
-            var averageTime = stopwatch.ElapsedMilliseconds / expectedPages;
-
-            _output.WriteLine($"Retrieved {totalItems} items in {expectedPages} pages");
-            _output.WriteLine($"Average page retrieval time: {averageTime}ms");
+            _logger.LogInformation($"Retrieved {totalItems} items in {totalTime}ms");
+            _logger.LogInformation($"Average time per page: {averageTimePerPage}ms");
+            Assert.True(averageTimePerPage < 1000, $"Average page retrieval time {averageTimePerPage}ms exceeds 1 second threshold");
         }
 
-        private async Task ExecuteQuery(string userId)
+        /// <summary>
+        /// Helper method to execute a single query with error handling.
+        /// </summary>
+        private async Task ExecuteQuery(string userId, string systemId)
         {
             try
             {
-                var result = await _service.QueryAuditRecordsAsync(userId: userId);
-                Assert.NotNull(result);
+                await _queryService.QueryAuditRecordsAsync(
+                    userId: userId,
+                    systemId: systemId,
+                    pageSize: 50);
             }
             catch (Exception ex)
             {
-                _output.WriteLine($"Error executing query for user {userId}: {ex.Message}");
+                _logger.LogError(ex, $"Error executing query for user {userId} and system {systemId}");
                 throw;
             }
         }

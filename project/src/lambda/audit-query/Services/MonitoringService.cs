@@ -8,6 +8,10 @@ using System.Threading.Tasks;
 
 namespace AuditQuery.Services
 {
+    /// <summary>
+    /// Service for monitoring and observability of the audit query system.
+    /// Handles CloudWatch metrics and X-Ray tracing for performance monitoring and debugging.
+    /// </summary>
     public class MonitoringService : IMonitoringService
     {
         private readonly IAmazonCloudWatch _cloudWatch;
@@ -15,6 +19,13 @@ namespace AuditQuery.Services
         private readonly string _environment;
         private readonly string _serviceName;
 
+        /// <summary>
+        /// Initializes the monitoring service with required AWS services and configuration.
+        /// </summary>
+        /// <param name="cloudWatch">CloudWatch client for metrics</param>
+        /// <param name="logger">Logger for monitoring events</param>
+        /// <param name="environment">Current environment (dev/staging/prod)</param>
+        /// <param name="serviceName">Name of the service for metric dimensions</param>
         public MonitoringService(
             IAmazonCloudWatch cloudWatch,
             ILogger<MonitoringService> logger,
@@ -27,6 +38,10 @@ namespace AuditQuery.Services
             _serviceName = serviceName ?? throw new ArgumentNullException(nameof(serviceName));
         }
 
+        /// <summary>
+        /// Tracks query performance metrics in CloudWatch.
+        /// Records execution time, result count, and success status for each query.
+        /// </summary>
         public async Task TrackQueryMetrics(
             string userId,
             string? systemId,
@@ -36,6 +51,7 @@ namespace AuditQuery.Services
         {
             try
             {
+                // Define metric dimensions for filtering and grouping
                 var dimensions = new List<Dimension>
                 {
                     new Dimension { Name = "Environment", Value = _environment },
@@ -48,8 +64,10 @@ namespace AuditQuery.Services
                     dimensions.Add(new Dimension { Name = "SystemId", Value = systemId });
                 }
 
+                // Create metrics for different aspects of query performance
                 var metrics = new List<MetricDatum>
                 {
+                    // Track query execution time for performance monitoring
                     new MetricDatum
                     {
                         MetricName = "QueryExecutionTime",
@@ -57,6 +75,7 @@ namespace AuditQuery.Services
                         Unit = StandardUnit.Milliseconds,
                         Dimensions = dimensions
                     },
+                    // Track number of results for capacity planning
                     new MetricDatum
                     {
                         MetricName = "QueryResultCount",
@@ -64,6 +83,7 @@ namespace AuditQuery.Services
                         Unit = StandardUnit.Count,
                         Dimensions = dimensions
                     },
+                    // Track success rate for reliability monitoring
                     new MetricDatum
                     {
                         MetricName = "QuerySuccess",
@@ -87,6 +107,10 @@ namespace AuditQuery.Services
             }
         }
 
+        /// <summary>
+        /// Wraps a synchronous operation with X-Ray tracing.
+        /// Records execution time and any exceptions that occur.
+        /// </summary>
         public void TrackXRaySegment(string operation, Action action)
         {
             try
@@ -105,6 +129,10 @@ namespace AuditQuery.Services
             }
         }
 
+        /// <summary>
+        /// Wraps an asynchronous operation with X-Ray tracing.
+        /// Records execution time and any exceptions that occur.
+        /// </summary>
         public async Task<T> TrackXRaySegmentAsync<T>(string operation, Func<Task<T>> action)
         {
             try
