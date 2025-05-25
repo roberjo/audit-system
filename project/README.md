@@ -1,7 +1,7 @@
 # Audit System Project Structure
 
 ## Overview
-This project implements a comprehensive audit system with blue/green deployment capabilities, automated testing, and monitoring.
+This project implements a comprehensive audit system with automated testing, monitoring, and security features.
 
 ## Project Structure
 
@@ -9,8 +9,10 @@ This project implements a comprehensive audit system with blue/green deployment 
 project/
 ├── src/                    # Source code
 │   ├── api/               # API Gateway and backend services
-│   ├── frontend/          # Frontend application
+│   ├── frontend/          # Frontend application (React 18 + Material-UI)
 │   ├── lambda/            # AWS Lambda functions
+│   │   ├── audit-query/   # Query service
+│   │   └── audit-events/  # Event processing
 │   ├── shared/            # Shared code and utilities
 │   └── utils/             # Utility functions
 │
@@ -24,42 +26,49 @@ project/
 │   │   ├── compute/
 │   │   ├── storage/
 │   │   ├── frontend/
-│   │   └── blue-green/
+│   │   └── monitoring/
 │   └── shared/           # Shared Terraform configurations
-│
-├── tests/                # Test suites
-│   ├── unit/            # Unit tests
-│   ├── integration/     # Integration tests
-│   ├── e2e/            # End-to-end tests
-│   ├── performance/    # Performance tests
-│   └── security/       # Security tests
-│
-├── scripts/             # Automation scripts
-│   ├── deployment/     # Deployment scripts
-│   ├── monitoring/     # Monitoring scripts
-│   ├── security/       # Security scripts
-│   └── health-checks/  # Health check scripts
 │
 ├── config/             # Configuration files
 │   ├── terraform.tfvars.*  # Environment-specific Terraform variables
-│   ├── blue-green-config.yaml
-│   ├── monitoring-config.yaml
-│   └── security-config.yaml
+│   └── monitoring-config.yaml
 │
 ├── docs/               # Documentation
-│   ├── ci-cd-pipeline.md
+│   ├── api-documentation.md
+│   ├── technical-architecture.md
+│   ├── deployment-guide.md
 │   └── other documentation files
 │
 └── artifacts/         # Build artifacts and temporary files
 ```
 
+## Technology Stack
+
+### Frontend
+- React 18.2.0
+- Material-UI 5.13.0
+- TypeScript 5.0.4
+- React Query 3.39.3
+- Axios 1.4.0
+
+### Backend
+- .NET 8.0
+- AWS Lambda
+- DynamoDB
+- API Gateway
+
+### Infrastructure
+- Terraform
+- AWS CloudWatch
+- AWS SNS for alerts
+
 ## Setup Instructions
 
 ### Prerequisites
+- .NET 8.0 SDK
+- Node.js >= 16.x
 - AWS CLI configured with appropriate credentials
 - Terraform >= 1.0.0
-- Node.js >= 16.x
-- Python >= 3.8
 - PowerShell 7.x
 
 ### Environment Setup
@@ -70,73 +79,67 @@ project/
 
 2. Initialize Terraform:
    ```powershell
-   cd project/terraform/environments/dev
+   Set-Location project/terraform/environments/dev
    terraform init
    ```
 
 3. Install dependencies:
    ```powershell
    # Frontend dependencies
-   cd project/src/frontend
+   Set-Location project/src/frontend
    npm install
 
    # Backend dependencies
-   cd project/src/api
-   npm install
+   Set-Location project/src/lambda/audit-query
+   dotnet restore
    ```
 
-### Development
-1. Start development environment:
-   ```powershell
-   ./scripts/deployment/start-dev.ps1
-   ```
+## Testing
 
-2. Run tests:
-   ```powershell
-   ./scripts/run-tests.ps1
-   ```
+### Unit Tests
+```powershell
+Set-Location project/src/lambda/audit-query.Tests
+dotnet test
+```
 
-### Deployment
-1. Deploy to development:
-   ```powershell
-   ./scripts/deployment/deploy.ps1 -Environment dev
-   ```
+### Load Tests
+```powershell
+Set-Location project/src/lambda/audit-query.Tests
+dotnet test --filter Category=Load
+```
 
-2. Deploy to staging:
-   ```powershell
-   ./scripts/deployment/deploy.ps1 -Environment staging
-   ```
+### Security Tests
+```powershell
+Set-Location project/src/lambda/audit-query.Tests
+dotnet test --filter Category=Security
+```
 
-3. Deploy to production:
-   ```powershell
-   ./scripts/deployment/deploy.ps1 -Environment prod
-   ```
+### Chaos Tests
+```powershell
+Set-Location project/src/lambda/audit-query.Tests
+dotnet test --filter Category=Chaos
+```
 
-## Monitoring and Maintenance
+## Monitoring
 
-### Health Checks
-- Run health checks:
-  ```powershell
-  ./scripts/health-checks/run-health-checks.ps1
-  ```
+### CloudWatch Dashboard
+The system includes a comprehensive CloudWatch dashboard with:
+- Query execution time metrics
+- Total query results
+- Successful queries
+- DynamoDB capacity units
+- Lambda performance metrics
 
-### Monitoring
-- View monitoring dashboard:
-  ```powershell
-  ./scripts/monitoring/open-dashboard.ps1
-  ```
-
-### Security
-- Run security scans:
-  ```powershell
-  ./scripts/security/run-security-scan.ps1
-  ```
+### Alarms
+- High error rate alerts
+- High latency alerts
+- DynamoDB throttling alerts
+- System error alerts
 
 ## Documentation
-- CI/CD Pipeline: [CI/CD Pipeline Documentation](docs/ci-cd-pipeline.md)
-- Infrastructure: [Infrastructure Documentation](docs/infrastructure.md)
-- API Documentation: [API Documentation](docs/api.md)
-- Frontend Documentation: [Frontend Documentation](docs/frontend.md)
+- API Documentation: [API Documentation](docs/api-documentation.md)
+- Technical Architecture: [Technical Architecture](docs/technical-architecture.md)
+- Deployment Guide: [Deployment Guide](docs/deployment-guide.md)
 
 ## Contributing
 1. Create a feature branch

@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@types/aws-sdk": "^0.0.42",
+    "aws-sdk": "^2.1692.0"
+  }
+}
