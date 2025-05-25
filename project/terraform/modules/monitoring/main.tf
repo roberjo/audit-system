@@ -1,10 +1,9 @@
 # CloudWatch Dashboard for Audit System
 resource "aws_cloudwatch_dashboard" "audit_system" {
-  dashboard_name = "${var.environment}-audit-system-dashboard"
+  dashboard_name = "audit-system-${var.environment}"
 
   dashboard_body = jsonencode({
     widgets = [
-      # DynamoDB Table Metrics
       {
         type   = "metric"
         x      = 0
@@ -13,8 +12,58 @@ resource "aws_cloudwatch_dashboard" "audit_system" {
         height = 6
         properties = {
           metrics = [
-            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", var.dynamodb_table_name],
-            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", var.dynamodb_table_name]
+            ["AuditSystem", "QueryExecutionTime", "Environment", var.environment],
+            ["AuditSystem", "QueryExecutionTime", "Environment", var.environment, { stat = "p95" }],
+            ["AuditSystem", "QueryExecutionTime", "Environment", var.environment, { stat = "p99" }]
+          ]
+          period = 300
+          stat   = "Average"
+          region = var.aws_region
+          title  = "Query Execution Time"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 0
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AuditSystem", "QueryResultCount", "Environment", var.environment]
+          ]
+          period = 300
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Total Query Results"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 0
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AuditSystem", "QuerySuccess", "Environment", var.environment]
+          ]
+          period = 300
+          stat   = "Sum"
+          region = var.aws_region
+          title  = "Successful Queries"
+        }
+      },
+      {
+        type   = "metric"
+        x      = 12
+        y      = 6
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/DynamoDB", "ConsumedReadCapacityUnits", "TableName", var.dynamodb_table_name],
+            ["AWS/DynamoDB", "ConsumedWriteCapacityUnits", "TableName", var.dynamodb_table_name]
           ]
           period = 300
           stat   = "Sum"
@@ -24,51 +73,20 @@ resource "aws_cloudwatch_dashboard" "audit_system" {
       },
       {
         type   = "metric"
-        x      = 12
-        y      = 0
-        width  = 12
-        height = 6
-        properties = {
-          metrics = [
-            ["AWS/DynamoDB", "ThrottledRequests", "TableName", var.dynamodb_table_name]
-          ]
-          period = 300
-          stat   = "Sum"
-          region = var.aws_region
-          title  = "Throttled Requests"
-        }
-      },
-      {
-        type   = "metric"
         x      = 0
-        y      = 6
-        width  = 12
+        y      = 12
+        width  = 24
         height = 6
         properties = {
           metrics = [
-            ["AWS/DynamoDB", "SystemErrors", "TableName", var.dynamodb_table_name],
-            ["AWS/DynamoDB", "UserErrors", "TableName", var.dynamodb_table_name]
+            ["AWS/Lambda", "Duration", "FunctionName", var.lambda_function_name],
+            ["AWS/Lambda", "Errors", "FunctionName", var.lambda_function_name],
+            ["AWS/Lambda", "Throttles", "FunctionName", var.lambda_function_name]
           ]
           period = 300
-          stat   = "Sum"
+          stat   = "Average"
           region = var.aws_region
-          title  = "Errors"
-        }
-      },
-      {
-        type   = "metric"
-        x      = 12
-        y      = 6
-        width  = 12
-        height = 6
-        properties = {
-          metrics = [
-            ["AWS/DynamoDB", "ReturnedItemCount", "TableName", var.dynamodb_table_name]
-          ]
-          period = 300
-          stat   = "Sum"
-          region = var.aws_region
-          title  = "Returned Items"
+          title  = "Lambda Performance"
         }
       }
     ]
@@ -132,7 +150,7 @@ resource "aws_cloudwatch_metric_alarm" "dynamodb_user_errors" {
 
 # SNS Topic for Alerts
 resource "aws_sns_topic" "alerts" {
-  name = "${var.environment}-audit-system-alerts"
+  name = "audit-system-alerts-${var.environment}"
 }
 
 # SNS Topic Policy
@@ -187,4 +205,46 @@ resource "aws_cloudwatch_metric_alarm" "slow_queries" {
   alarm_description  = "This alarm monitors for slow queries in DynamoDB"
   alarm_actions      = [aws_sns_topic.alerts.arn]
   ok_actions         = [aws_sns_topic.alerts.arn]
+}
+
+resource "aws_cloudwatch_metric_alarm" "high_error_rate" {
+  alarm_name          = "audit-system-high-error-rate-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "QuerySuccess"
+  namespace           = "AuditSystem"
+  period             = 300
+  statistic          = "Sum"
+  threshold          = 10
+  alarm_description  = "This metric monitors the number of failed queries"
+  alarm_actions      = [aws_sns_topic.alerts.arn]
+  ok_actions         = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    Environment = var.environment
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "high_latency" {
+  alarm_name          = "audit-system-high-latency-${var.environment}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "QueryExecutionTime"
+  namespace           = "AuditSystem"
+  period             = 300
+  statistic          = "p95"
+  threshold          = 1000
+  alarm_description  = "This metric monitors query execution time"
+  alarm_actions      = [aws_sns_topic.alerts.arn]
+  ok_actions         = [aws_sns_topic.alerts.arn]
+
+  dimensions = {
+    Environment = var.environment
+  }
+}
+
+resource "aws_sns_topic_subscription" "alerts" {
+  topic_arn = aws_sns_topic.alerts.arn
+  protocol  = "email"
+  endpoint  = var.alert_email
 } 
