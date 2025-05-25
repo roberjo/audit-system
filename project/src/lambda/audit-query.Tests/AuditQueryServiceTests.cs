@@ -174,5 +174,144 @@ namespace AuditQuery.Tests
                     It.Is<Func<It.IsAnyType, Exception, string>>((v, t) => true)),
                 Times.Once);
         }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithSystemId_ShouldQueryCorrectly()
+        {
+            // Arrange
+            var systemId = "test-system";
+            _mockDynamoDbClient
+                .Setup(x => x.QueryAsync(It.IsAny<QueryRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new QueryResponse
+                {
+                    Items = new List<Dictionary<string, AttributeValue>>
+                    {
+                        new Dictionary<string, AttributeValue>
+                        {
+                            ["systemId"] = new AttributeValue { S = systemId },
+                            ["timestamp"] = new AttributeValue { S = DateTime.UtcNow.ToString("o") },
+                            ["action"] = new AttributeValue { S = "test-action" }
+                        }
+                    }
+                });
+
+            // Act
+            var result = await _service.QueryAuditRecordsAsync(systemId: systemId);
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Single(result.Items);
+            Assert.Equal(systemId, result.Items[0]["systemId"]);
+            _mockDynamoDbClient.Verify(x => x.QueryAsync(
+                It.Is<QueryRequest>(req => 
+                    req.TableName == _tableName &&
+                    req.FilterExpression.Contains("systemId = :systemId")),
+                It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithPageSize_ShouldLimitResults()
+        {
+            // Arrange
+            var pageSize = 5;
+            _mockDynamoDbClient
+                .Setup(x => x.QueryAsync(It.IsAny<QueryRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new QueryResponse
+                {
+                    Items = new List<Dictionary<string, AttributeValue>>()
+                });
+
+            // Act
+            var result = await _service.QueryAuditRecordsAsync(pageSize: pageSize);
+
+            // Assert
+            _mockDynamoDbClient.Verify(x => x.QueryAsync(
+                It.Is<QueryRequest>(req => 
+                    req.TableName == _tableName &&
+                    req.Limit == pageSize),
+                It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithInvalidDateRange_ShouldThrowArgumentException()
+        {
+            // Arrange
+            var startDate = DateTime.UtcNow;
+            var endDate = startDate.AddDays(-1); // End date before start date
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() => 
+                _service.QueryAuditRecordsAsync(startDate: startDate, endDate: endDate));
+        }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithInvalidPageSize_ShouldThrowArgumentException()
+        {
+            // Arrange
+            var invalidPageSize = -1;
+
+            // Act & Assert
+            await Assert.ThrowsAsync<ArgumentException>(() => 
+                _service.QueryAuditRecordsAsync(pageSize: invalidPageSize));
+        }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithAllParameters_ShouldCombineFilters()
+        {
+            // Arrange
+            var userId = "test-user";
+            var systemId = "test-system";
+            var startDate = DateTime.UtcNow.AddDays(-1);
+            var endDate = DateTime.UtcNow;
+            var pageSize = 10;
+
+            _mockDynamoDbClient
+                .Setup(x => x.QueryAsync(It.IsAny<QueryRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new QueryResponse
+                {
+                    Items = new List<Dictionary<string, AttributeValue>>()
+                });
+
+            // Act
+            var result = await _service.QueryAuditRecordsAsync(
+                userId: userId,
+                systemId: systemId,
+                startDate: startDate,
+                endDate: endDate,
+                pageSize: pageSize);
+
+            // Assert
+            _mockDynamoDbClient.Verify(x => x.QueryAsync(
+                It.Is<QueryRequest>(req => 
+                    req.TableName == _tableName &&
+                    req.KeyConditionExpression.Contains("userId = :userId") &&
+                    req.FilterExpression.Contains("systemId = :systemId") &&
+                    req.FilterExpression.Contains("timestamp BETWEEN :startDate AND :endDate") &&
+                    req.Limit == pageSize),
+                It.IsAny<CancellationToken>()),
+                Times.Once);
+        }
+
+        [Fact]
+        public async Task QueryAuditRecordsAsync_WithEmptyResponse_ShouldReturnEmptyList()
+        {
+            // Arrange
+            _mockDynamoDbClient
+                .Setup(x => x.QueryAsync(It.IsAny<QueryRequest>(), It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new QueryResponse
+                {
+                    Items = new List<Dictionary<string, AttributeValue>>()
+                });
+
+            // Act
+            var result = await _service.QueryAuditRecordsAsync();
+
+            // Assert
+            Assert.NotNull(result);
+            Assert.Empty(result.Items);
+            Assert.Null(result.LastEvaluatedKey);
+        }
     }
 } 
