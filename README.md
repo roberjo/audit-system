@@ -4,8 +4,29 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0.4-blue.svg)](https://www.typescriptlang.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-18.x-green.svg)](https://nodejs.org/)
 [![Terraform](https://img.shields.io/badge/Terraform-1.0.0-purple.svg)](https://www.terraform.io/)
+[![AWS](https://img.shields.io/badge/AWS-Serverless-orange.svg)](https://aws.amazon.com/serverless/)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](CONTRIBUTING.md)
 
-A comprehensive audit system for tracking and managing system changes across your organization. Built with AWS serverless architecture, this system provides real-time event processing, secure storage, and powerful querying capabilities for audit logs.
+<div align="center">
+  <img src="project/docs/assets/logo.png" alt="Audit System Logo" width="200"/>
+  
+  A comprehensive audit system for tracking and managing system changes across your organization.
+</div>
+
+## 📋 Table of Contents
+
+- [Features](#-features)
+- [Architecture](#-architecture)
+- [Project Structure](#-project-structure)
+- [Getting Started](#-getting-started)
+- [Testing](#-testing)
+- [Monitoring](#-monitoring)
+- [Security](#-security)
+- [Documentation](#-documentation)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Support](#-support)
+- [Roadmap](#-roadmap)
 
 ## 🌟 Features
 
@@ -143,13 +164,25 @@ For detailed security information, see [Security Guide](project/docs/security-gu
 
 ## 🤝 Contributing
 
+We welcome contributions! Please see our [Contributing Guide](project/docs/contributing.md) for details.
+
 1. Fork the repository
 2. Create a feature branch
 3. Make your changes
 4. Run tests and linting
 5. Submit a pull request
 
-For detailed contribution guidelines, see [Contributing Guide](project/docs/contributing.md).
+### Development Workflow
+
+```mermaid
+graph LR
+    A[Fork] --> B[Branch]
+    B --> C[Develop]
+    C --> D[Test]
+    D --> E[PR]
+    E --> F[Review]
+    F --> G[Merge]
+```
 
 ## 📝 License
 
@@ -175,4 +208,10 @@ For support:
 - AWS Serverless Architecture
 - React and Material-UI
 - Terraform Community
-- Open Source Contributors 
+- Open Source Contributors
+
+---
+
+<div align="center">
+  <sub>Built with ❤️ by the Audit System Team</sub>
+</div> 
