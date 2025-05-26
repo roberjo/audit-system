@@ -1,9 +1,11 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { DynamoDB } from 'aws-sdk';
 import { v4 as uuidv4 } from 'uuid';
+import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
+import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 
-const dynamoDB = new DynamoDB.DocumentClient();
-const TABLE_NAME = process.env.DYNAMODB_TABLE || '';
+const client = new DynamoDBClient({});
+const dynamoDB = DynamoDBDocumentClient.from(client);
+const TABLE_NAME = process.env.DYNAMODB_TABLE ?? '';
 
 interface AuditEvent {
   id: string;
@@ -42,8 +44,8 @@ export const handler = async (
       details: requestBody.details || {},
       metadata: {
         ipAddress: event.requestContext.identity.sourceIp,
-        userAgent: event.requestContext.identity.userAgent || '',
-        environment: process.env.ENVIRONMENT || 'dev',
+        userAgent: event.requestContext.identity.userAgent ?? '',
+        environment: process.env.ENVIRONMENT ?? 'dev',
       },
     };
 
@@ -58,12 +60,12 @@ export const handler = async (
     }
 
     // Store event in DynamoDB
-    await dynamoDB
-      .put({
+    await dynamoDB.send(
+      new PutCommand({
         TableName: TABLE_NAME,
         Item: auditEvent,
       })
-      .promise();
+    );
 
     return {
       statusCode: 201,

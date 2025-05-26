@@ -1,12 +1,11 @@
 {
-  "name": "audit-system",
+  "name": "audit-system-project",
   "version": "1.0.0",
-  "description": "Audit System for tracking system changes",
+  "description": "Audit System Project",
   "scripts": {
     "test": "jest",
     "build": "tsc",
-    "lint": "eslint . --ext .ts",
-    "deploy": "npm run build && terraform apply"
+    "lint": "eslint . --ext .ts"
   },
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.817.0",
@@ -26,4 +25,4 @@
     "ts-jest": "^29.1.1",
     "typescript": "^5.2.2"
   }
-}
+} 
